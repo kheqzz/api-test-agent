@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -149,6 +149,48 @@ async def login(payload: dict) -> dict[str, str]:
     if not payload.get("email") or not payload.get("password"):
         raise HTTPException(401, "missing credentials")
     return {"access_token": "demo-jwt-token", "token_type": "bearer"}
+
+
+@app.post("/auth/sign-in/email")
+async def sign_in_email(payload: dict) -> dict[str, Any]:
+    """Demo two-step sign-in: returns an intermediate session token."""
+    if not payload.get("email") or not payload.get("password"):
+        raise HTTPException(401, "missing credentials")
+    return {"token": "demo-session-token", "user": {"email": payload.get("email")}}
+
+
+@app.post("/auth/token")
+async def issue_token(request: Request) -> dict[str, str]:
+    """Demo JWT endpoint: exchanges a login token for a JWT."""
+    token = None
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        token = auth.split(" ", 1)[1].strip()
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    if not token and isinstance(body, dict):
+        token = body.get("token") or body.get("access_token") or body.get("jwt")
+    if not token:
+        raise HTTPException(401, "missing login token")
+    return {
+        "access_token": "demo-jwt-token",
+        "token": "demo-jwt-token",
+        "token_type": "bearer",
+    }
+
+
+@app.get("/auth/token")
+async def issue_token_get(request: Request) -> dict[str, str]:
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        raise HTTPException(401, "missing login token")
+    return {
+        "access_token": "demo-jwt-token",
+        "token": "demo-jwt-token",
+        "token_type": "bearer",
+    }
 
 
 @app.get("/health")

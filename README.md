@@ -82,7 +82,7 @@ curl -X POST http://127.0.0.1:8000/analyze \
   -F "target_url=https://petstore.example.com"
 ```
 
-Authenticated APIs: either pass extra headers as JSON — `-F 'auth_headers={"Authorization": "Bearer <token>"}'` — or use the login flow — `-F 'email=user@example.com' -F 'password=secret' -F 'login_url=http://api.example.com/auth/login' -F 'token_field=access_token'`.
+Authenticated APIs: either pass extra headers as JSON — `-F 'auth_headers={"Authorization": "Bearer <token>"}'` — or use the login flow — `-F 'email=user@example.com' -F 'password=secret' -F 'login_url=http://api.example.com/auth/login' -F 'token_field=access_token'`. For two-step auth (login returns a session token, then a separate endpoint returns the JWT), add `-F 'login_url=.../auth/sign-in/email' -F 'login_token_field=token' -F 'token_url=.../auth/token' -F 'token_field=access_token'`.
 
 ### What the demo finds
 

@@ -119,6 +119,67 @@ def _extract_token(payload: Any, field: str) -> str | None:
     return None
 
 
+def _call_token_endpoint(
+    request: Request,
+    token_url: str,
+    login_token: str,
+    field: str,
+) -> str:
+    """Call a JWT/token endpoint using the login token and return the JWT."""
+    _ensure_target_allowed(request, token_url, "token_url")
+    field = (field or "").strip() or "access_token"
+    strategies: list[tuple[str, dict[str, str], dict[str, str] | None]] = [
+        ("POST", {"Authorization": f"Bearer {login_token}"}, None),
+        ("POST", {"Authorization": f"Bearer {login_token}"}, {"token": login_token}),
+        ("POST", {"Authorization": f"Bearer {login_token}"}, {"access_token": login_token}),
+        ("POST", {}, {"token": login_token}),
+        ("POST", {}, {"access_token": login_token}),
+        ("POST", {}, {"jwt": login_token}),
+        ("GET", {"Authorization": f"Bearer {login_token}"}, None),
+        ("GET", {}, None),
+    ]
+    last_error: str | None = None
+    for method, headers, body in strategies:
+        try:
+            with httpx.Client(timeout=settings.request_timeout, follow_redirects=True) as client:
+                if method == "POST":
+                    if body is None:
+                        response = client.post(token_url, headers=headers)
+                    else:
+                        response = client.post(token_url, headers=headers, json=body)
+                else:
+                    response = client.get(token_url, headers=headers)
+        except httpx.HTTPError as exc:
+            last_error = f"request failed: {exc}"
+            continue
+        if response.status_code >= 400:
+            last_error = f"HTTP {response.status_code}: {response.text[:200]}"
+            continue
+        # Try JSON first.
+        try:
+            payload = response.json()
+        except (json.JSONDecodeError, ValueError):
+            text = response.text.strip()
+            if text:
+                return text
+            continue
+        if isinstance(payload, str) and payload.strip():
+            return payload.strip()
+        token = _extract_token(payload, field)
+        if token:
+            return token
+        # Some endpoints return the token under a non-standard key; try the whole
+        # payload serialized? Fall back to scanning string values.
+        if isinstance(payload, dict):
+            for value in payload.values():
+                if isinstance(value, str) and value.strip() and value != login_token:
+                    # heuristic: a JWT-like or longer token
+                    if len(value.strip()) >= 8:
+                        return value.strip()
+        last_error = f"no token found in response: {str(payload)[:200]}"
+    raise HTTPException(502, f"token endpoint failed: {last_error or 'unknown error'}")
+
+
 def _login_for_token(
     request: Request,
     *,
@@ -128,9 +189,18 @@ def _login_for_token(
     token_field: str,
     email_field: str,
     password_field: str,
+    login_token_field: str = "token",
+    token_url: str | None = None,
+    jwt_token_field: str | None = None,
 ) -> dict[str, str]:
-    """Call the configured login endpoint and return an Authorization header."""
-    if not (email and password and login_url):
+    """Call the configured login (+ optional JWT) endpoint and return an Authorization header."""
+    if not (email and password):
+        return {}
+    # Backward compat: if no separate login_url was given but a url was, use it as login.
+    if not login_url and token_url:
+        login_url = token_url
+        token_url = None
+    if not login_url:
         return {}
     _ensure_target_allowed(request, login_url, "login_url")
     try:
@@ -149,14 +219,24 @@ def _login_for_token(
         payload = response.json()
     except (json.JSONDecodeError, ValueError) as exc:
         raise HTTPException(502, f"login response is not JSON: {exc}") from exc
-    token = _extract_token(payload, token_field)
-    if not token:
+    intermediate_field = (login_token_field or "").strip() or "token"
+    login_token = _extract_token(payload, intermediate_field)
+    if not login_token:
+        # Fall back to the configured token_field for single-step setups.
+        login_token = _extract_token(payload, token_field)
+    if not login_token:
         raise HTTPException(
             502,
-            f"no JWT found under field {token_field!r} in login response: "
+            f"no token found under field {intermediate_field!r} in login response: "
             f"{str(payload)[:300]}",
         )
-    return {"Authorization": f"Bearer {token}"}
+
+    # If a separate token/JWT endpoint is configured, exchange the login token for a JWT.
+    if token_url:
+        final_field = (jwt_token_field or "").strip() or (token_field or "").strip() or "access_token"
+        jwt = _call_token_endpoint(request, token_url, login_token, final_field)
+        return {"Authorization": f"Bearer {jwt}"}
+    return {"Authorization": f"Bearer {login_token}"}
 
 
 def _run_analysis(state: AgentState) -> None:
@@ -201,12 +281,32 @@ def analyze(
     username: str | None = Form(None, description="Alias for email"),
     auth_email: str | None = Form(None, description="Alias for email"),
     auth_password: str | None = Form(None, description="Alias for password"),
-    login_url: str | None = Form(None, description="URL of the login endpoint"),
+    login_url: str | None = Form(None, description="URL of the login (sign-in) endpoint"),
     login_endpoint: str | None = Form(None, description="Alias for login_url"),
     login_api: str | None = Form(None, description="Alias for login_url"),
     auth_url: str | None = Form(None, description="Alias for login_url"),
-    token_url: str | None = Form(None, description="Alias for login_url"),
-    jwt_url: str | None = Form(None, description="Alias for login_url"),
+    sign_in_url: str | None = Form(None, description="Alias for login_url"),
+    signin_url: str | None = Form(None, description="Alias for login_url"),
+    auth_login_url: str | None = Form(None, description="Alias for login_url"),
+    login_api_url: str | None = Form(None, description="Alias for login_url"),
+    # Separate JWT/token endpoint (optional two-step auth).
+    token_url: str | None = Form(None, description="URL of the JWT/token endpoint"),
+    jwt_url: str | None = Form(None, description="Alias for token_url"),
+    jwt_endpoint: str | None = Form(None, description="Alias for token_url"),
+    token_endpoint: str | None = Form(None, description="Alias for token_url"),
+    jwt_token_url: str | None = Form(None, description="Alias for token_url"),
+    access_token_url: str | None = Form(None, description="Alias for token_url"),
+    auth_token_url: str | None = Form(None, description="Alias for token_url"),
+    jwt_api: str | None = Form(None, description="Alias for token_url"),
+    token_api: str | None = Form(None, description="Alias for token_url"),
+    # Token field in the login response.
+    login_token_field: str | None = Form(None, description="Field in login response holding the intermediate token"),
+    login_token: str | None = Form(None, description="Alias for login_token_field"),
+    session_token_field: str | None = Form(None, description="Alias for login_token_field"),
+    session_token: str | None = Form(None, description="Alias for login_token_field"),
+    login_response_token_field: str | None = Form(None, description="Alias for login_token_field"),
+    signin_token_field: str | None = Form(None, description="Alias for login_token_field"),
+    # Token field in the JWT/token response (or single-step login response).
     token_field: str | None = Form(
         None, description="Response field holding the JWT (default access_token)"
     ),
@@ -215,7 +315,9 @@ def analyze(
     access_token_field: str | None = Form(None, description="Alias for token_field"),
     jwt_field: str | None = Form(None, description="Alias for token_field"),
     jwt_token_field: str | None = Form(None, description="Alias for token_field"),
+    jwt_token: str | None = Form(None, description="Alias for token_field"),
     response_token_field: str | None = Form(None, description="Alias for token_field"),
+    jwt_token_key: str | None = Form(None, description="Alias for token_field"),
     email_field: str | None = Form(None, description="Request body field name for email"),
     password_field: str | None = Form(None, description="Request body field name for password"),
 ) -> dict[str, str]:
@@ -248,9 +350,44 @@ def analyze(
     # Resolve login-flow aliases.
     login_email = _first(email, auth_email, username)
     login_password = _first(password, auth_password)
-    login_url_value = _first(
-        login_url, login_endpoint, login_api, auth_url, token_url, jwt_url
+    explicit_login_url = _first(
+        login_url,
+        login_endpoint,
+        login_api,
+        auth_url,
+        sign_in_url,
+        signin_url,
+        auth_login_url,
+        login_api_url,
     )
+    jwt_endpoint_url = _first(
+        token_url,
+        jwt_url,
+        jwt_endpoint,
+        token_endpoint,
+        jwt_token_url,
+        access_token_url,
+        auth_token_url,
+        jwt_api,
+        token_api,
+    )
+    # Backward compat: if no explicit login URL but a url was given, treat it as
+    # the (single-step) login URL.
+    if explicit_login_url:
+        login_url_value = explicit_login_url
+        token_url_value = jwt_endpoint_url
+    else:
+        login_url_value = jwt_endpoint_url
+        token_url_value = None
+
+    login_token_field_value = _first(
+        login_token_field,
+        login_token,
+        session_token_field,
+        session_token,
+        login_response_token_field,
+        signin_token_field,
+    ) or "token"
     token_field_value = _first(
         token_field,
         token_key,
@@ -258,20 +395,43 @@ def analyze(
         access_token_field,
         jwt_field,
         jwt_token_field,
+        jwt_token,
         response_token_field,
+        jwt_token_key,
     ) or "access_token"
     email_field_value = (email_field or "").strip() or "email"
     password_field_value = (password_field or "").strip() or "password"
 
     # If a login flow is requested, obtain a JWT and turn it into a Bearer header.
+    # Decide which field name applies to the intermediate (login) response vs the
+    # final JWT response. In two-step mode, jwt-specific field names win for the
+    # final response; otherwise token_field is used for the single login response.
+    if token_url_value:
+        # Two-step: keep token_field for the final JWT response, and use the
+        # login token field for the intermediate response.
+        intermediate_field_value = login_token_field_value
+        final_field_value = token_field_value
+    else:
+        # Single-step: the user may have supplied either field name; prefer an
+        # explicitly provided login token field, else token_field.
+        if login_token_field is not None or login_token is not None or session_token_field is not None or session_token is not None or login_response_token_field is not None or signin_token_field is not None:
+            intermediate_field_value = login_token_field_value
+            final_field_value = login_token_field_value
+        else:
+            intermediate_field_value = token_field_value
+            final_field_value = token_field_value
+
     login_headers = _login_for_token(
         request,
         email=login_email,
         password=login_password,
         login_url=login_url_value,
-        token_field=token_field_value,
+        token_field=final_field_value,
         email_field=email_field_value,
         password_field=password_field_value,
+        login_token_field=intermediate_field_value,
+        token_url=token_url_value,
+        jwt_token_field=final_field_value,
     )
     # Login-derived headers first; explicit auth_headers win on conflict.
     merged_headers = {**login_headers, **parsed_headers}

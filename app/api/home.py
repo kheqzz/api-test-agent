@@ -177,16 +177,28 @@ def render_dashboard(reports: list[dict[str, Any]]) -> str:
              placeholder="&hellip;">
     </div>
     <div class="field">
-      <label for="login_url">login api url &mdash; optional</label>
+      <label for="login_url">login (sign-in) api url &mdash; optional</label>
       <input type="url" id="login_url" name="login_url"
              placeholder="http://127.0.0.1:8001/auth/login">
-      <div class="hint">endpoint the agent calls to obtain a JWT</div>
+      <div class="hint">endpoint the agent calls first (returns a token)</div>
+    </div>
+    <div class="field">
+      <label for="login_token_field">login token field name &mdash; optional</label>
+      <input type="text" id="login_token_field" name="login_token_field"
+             placeholder="token (default)">
+      <div class="hint">field in the login response holding the intermediate token</div>
+    </div>
+    <div class="field">
+      <label for="token_url">jwt / token api url &mdash; optional (two-step)</label>
+      <input type="url" id="token_url" name="token_url"
+             placeholder="http://127.0.0.1:8001/auth/token">
+      <div class="hint">called with the login token to obtain the JWT</div>
     </div>
     <div class="field">
       <label for="token_field">jwt field name &mdash; optional</label>
       <input type="text" id="token_field" name="token_field"
              placeholder="access_token (default)">
-      <div class="hint">field in the login response holding the JWT</div>
+      <div class="hint">field in the jwt response holding the JWT</div>
     </div>
     <div class="field">
       <label for="auth_headers">auth headers &mdash; optional json</label>

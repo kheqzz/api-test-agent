@@ -21,8 +21,8 @@ from typing import TypeVar
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_groq import ChatGroq
-from pydantic import BaseModel, ValidationError
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, SecretStr, ValidationError
 
 from app.config import settings
 
@@ -37,22 +37,31 @@ class LLMError(RuntimeError):
     """Raised when the LLM cannot produce a usable answer after retries."""
 
 
-def get_llm(temperature: float = 0.2) -> BaseChatModel:
-    """Return the configured chat model (Groq by default).
 
-    Raises:
-        LLMError: if no API key is configured.
-    """
-    if not settings.groq_api_key:
-        raise LLMError(
-            "GROQ_API_KEY is not set. Copy .env.example to .env and add a key "
-            "(free at https://console.groq.com)."
-        )
-    return ChatGroq(
+from langchain_openai import ChatOpenAI
+
+
+
+
+from pydantic import SecretStr
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_openai import ChatOpenAI
+
+
+def get_llm(temperature: float = 0.2) -> BaseChatModel:
+    """Return the configured OpenAI-compatible chat model."""
+    if not settings.llm_api_key:
+        raise LLMError("LLM_API_KEY is not set. Configure it in .env.")
+
+    return ChatOpenAI(
         model=settings.llm_model,
-        api_key=settings.groq_api_key,
+        api_key=SecretStr(settings.llm_api_key),
         temperature=temperature,
+        base_url=settings.llm_base_url or None,
     )
+
+
+
 
 
 def _is_rate_limit(exc: Exception) -> bool:

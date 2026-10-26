@@ -1,8 +1,28 @@
+
 [project]
 name = "api-test-agent"
 version = "0.1.0"
 description = "AI agent that generates and runs API tests from an OpenAPI spec (LangGraph + FastAPI + pytest)"
 requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.115.6",
+    "uvicorn[standard]==0.34.0",
+    "python-multipart==0.0.20",
+    "langgraph==0.2.60",
+    "langchain-core==0.3.29",
+    "httpx==0.28.1",
+    "openapi-spec-validator==0.7.1",
+    "PyYAML==6.0.2",
+    "jsonschema==4.23.0",
+    "pydantic==2.10.4",
+    "python-dotenv==1.0.1",
+    "langchain-openai>=0.3.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==8.3.4",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

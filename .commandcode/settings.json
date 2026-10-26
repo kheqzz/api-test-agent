@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(cd /run/media/keq/All_Downloads/project-ai-i-guess/api-test-agent && find .venv -path '*langchain_openai*' -name '*.pyi' 2>/dev/null; find .venv -path '*langchain_openai*' -name 'base.pyi' 2>/dev/null)",
+      "Shell(which pyright basedpyright mypy 2>/dev/null; find / -name 'pyright' -type f 2>/dev/null | head)",
+      "Shell(mypy:*)"
+    ],
+    "deny": [],
+    "defaultMode": "default"
+  }
+}

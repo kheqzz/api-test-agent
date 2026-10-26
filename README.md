@@ -82,7 +82,7 @@ curl -X POST http://127.0.0.1:8000/analyze \
   -F "target_url=https://petstore.example.com"
 ```
 
-Authenticated APIs: pass extra headers as JSON — `-F 'auth_headers={"Authorization": "Bearer <token>"}'`.
+Authenticated APIs: either pass extra headers as JSON — `-F 'auth_headers={"Authorization": "Bearer <token>"}'` — or use the login flow — `-F 'email=user@example.com' -F 'password=secret' -F 'login_url=http://api.example.com/auth/login' -F 'token_field=access_token'`.
 
 ### What the demo finds
 

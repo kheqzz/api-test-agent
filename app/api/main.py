@@ -19,6 +19,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 from urllib.parse import urlparse
 
+import httpx
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
 
@@ -84,6 +85,80 @@ def _ensure_target_allowed(request: Request, url: str, field: str) -> None:
         )
 
 
+def _first(*values: str | None) -> str | None:
+    """Return the first non-empty value among the candidates."""
+    for value in values:
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return None
+
+
+def _extract_token(payload: Any, field: str) -> str | None:
+    """Pull a JWT string out of a login response, supporting dotted paths."""
+    cur: Any = payload
+    for part in field.split("."):
+        if isinstance(cur, dict) and part in cur:
+            cur = cur[part]
+        else:
+            cur = None
+            break
+    if isinstance(cur, str) and cur.strip():
+        return cur.strip()
+    # Fall back to common token field names when the requested one is absent.
+    if isinstance(payload, dict):
+        for key in ("access_token", "token", "jwt", "jwt_token", "accessToken", "id_token"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        for nested_key in ("data", "result", "response"):
+            nested = payload.get(nested_key)
+            if isinstance(nested, dict):
+                found = _extract_token(nested, field)
+                if found:
+                    return found
+    return None
+
+
+def _login_for_token(
+    request: Request,
+    *,
+    email: str | None,
+    password: str | None,
+    login_url: str | None,
+    token_field: str,
+    email_field: str,
+    password_field: str,
+) -> dict[str, str]:
+    """Call the configured login endpoint and return an Authorization header."""
+    if not (email and password and login_url):
+        return {}
+    _ensure_target_allowed(request, login_url, "login_url")
+    try:
+        with httpx.Client(timeout=settings.request_timeout, follow_redirects=True) as client:
+            response = client.post(
+                login_url, json={email_field: email, password_field: password}
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, f"login request failed: {exc}") from exc
+    if response.status_code >= 400:
+        raise HTTPException(
+            401 if response.status_code in (401, 403) else 422,
+            f"login failed ({response.status_code}): {response.text[:300]}",
+        )
+    try:
+        payload = response.json()
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise HTTPException(502, f"login response is not JSON: {exc}") from exc
+    token = _extract_token(payload, token_field)
+    if not token:
+        raise HTTPException(
+            502,
+            f"no JWT found under field {token_field!r} in login response: "
+            f"{str(payload)[:300]}",
+        )
+    return {"Authorization": f"Bearer {token}"}
+
+
 def _run_analysis(state: AgentState) -> None:
     """Background task: run the LangGraph workflow and persist the result."""
     try:
@@ -120,6 +195,29 @@ def analyze(
         None,
         description='Optional JSON object of headers, e.g. {"Authorization": "Bearer ..."}',
     ),
+    # Login flow (optional): obtain a JWT by calling a login endpoint.
+    email: str | None = Form(None, description="Login email/username"),
+    password: str | None = Form(None, description="Login password"),
+    username: str | None = Form(None, description="Alias for email"),
+    auth_email: str | None = Form(None, description="Alias for email"),
+    auth_password: str | None = Form(None, description="Alias for password"),
+    login_url: str | None = Form(None, description="URL of the login endpoint"),
+    login_endpoint: str | None = Form(None, description="Alias for login_url"),
+    login_api: str | None = Form(None, description="Alias for login_url"),
+    auth_url: str | None = Form(None, description="Alias for login_url"),
+    token_url: str | None = Form(None, description="Alias for login_url"),
+    jwt_url: str | None = Form(None, description="Alias for login_url"),
+    token_field: str | None = Form(
+        None, description="Response field holding the JWT (default access_token)"
+    ),
+    token_key: str | None = Form(None, description="Alias for token_field"),
+    token_path: str | None = Form(None, description="Alias for token_field"),
+    access_token_field: str | None = Form(None, description="Alias for token_field"),
+    jwt_field: str | None = Form(None, description="Alias for token_field"),
+    jwt_token_field: str | None = Form(None, description="Alias for token_field"),
+    response_token_field: str | None = Form(None, description="Alias for token_field"),
+    email_field: str | None = Form(None, description="Request body field name for email"),
+    password_field: str | None = Form(None, description="Request body field name for password"),
 ) -> dict[str, str]:
     """Start an analysis run; returns a report id to poll."""
     # Browsers submit an empty file part when the input is left blank —
@@ -147,6 +245,37 @@ def analyze(
         except (json.JSONDecodeError, ValueError) as exc:
             raise HTTPException(422, f"auth_headers must be a JSON object: {exc}") from exc
 
+    # Resolve login-flow aliases.
+    login_email = _first(email, auth_email, username)
+    login_password = _first(password, auth_password)
+    login_url_value = _first(
+        login_url, login_endpoint, login_api, auth_url, token_url, jwt_url
+    )
+    token_field_value = _first(
+        token_field,
+        token_key,
+        token_path,
+        access_token_field,
+        jwt_field,
+        jwt_token_field,
+        response_token_field,
+    ) or "access_token"
+    email_field_value = (email_field or "").strip() or "email"
+    password_field_value = (password_field or "").strip() or "password"
+
+    # If a login flow is requested, obtain a JWT and turn it into a Bearer header.
+    login_headers = _login_for_token(
+        request,
+        email=login_email,
+        password=login_password,
+        login_url=login_url_value,
+        token_field=token_field_value,
+        email_field=email_field_value,
+        password_field=password_field_value,
+    )
+    # Login-derived headers first; explicit auth_headers win on conflict.
+    merged_headers = {**login_headers, **parsed_headers}
+
     report_id = uuid.uuid4().hex[:12]
     storage.create_report(report_id, target_url)
     state = AgentState(
@@ -154,7 +283,7 @@ def analyze(
         target_base_url=target_url,
         raw_spec=raw_spec,
         spec_url=spec_url,
-        auth_headers=parsed_headers,
+        auth_headers=merged_headers,
     )
     background_tasks.add_task(_run_analysis, state)
     return {

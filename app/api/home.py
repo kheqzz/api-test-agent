@@ -167,9 +167,32 @@ def render_dashboard(reports: list[dict[str, Any]]) -> str:
              placeholder="http://127.0.0.1:8001">
     </div>
     <div class="field">
+      <label for="email">login email &mdash; optional (jwt flow)</label>
+      <input type="text" id="email" name="email"
+             placeholder="user@example.com">
+    </div>
+    <div class="field">
+      <label for="password">login password &mdash; optional</label>
+      <input type="password" id="password" name="password"
+             placeholder="&hellip;">
+    </div>
+    <div class="field">
+      <label for="login_url">login api url &mdash; optional</label>
+      <input type="url" id="login_url" name="login_url"
+             placeholder="http://127.0.0.1:8001/auth/login">
+      <div class="hint">endpoint the agent calls to obtain a JWT</div>
+    </div>
+    <div class="field">
+      <label for="token_field">jwt field name &mdash; optional</label>
+      <input type="text" id="token_field" name="token_field"
+             placeholder="access_token (default)">
+      <div class="hint">field in the login response holding the JWT</div>
+    </div>
+    <div class="field">
       <label for="auth_headers">auth headers &mdash; optional json</label>
       <input type="text" id="auth_headers" name="auth_headers"
              placeholder='{{"Authorization": "Bearer &hellip;"}}'>
+      <div class="hint">manual headers (login flow fills Authorization automatically)</div>
     </div>
     <button type="submit" class="btn" id="submit-btn">Analyze &rarr;</button>
     <button type="button" class="btn ghost" id="prefill-demo"

@@ -143,6 +143,14 @@ async def create_order(payload: NewOrder) -> Order:
     return order
 
 
+@app.post("/auth/login")
+async def login(payload: dict) -> dict[str, str]:
+    """Demo login endpoint returning a JWT-like token for the login flow."""
+    if not payload.get("email") or not payload.get("password"):
+        raise HTTPException(401, "missing credentials")
+    return {"access_token": "demo-jwt-token", "token_type": "bearer"}
+
+
 @app.get("/health")
 async def health() -> dict[str, str]:
     """Liveness probe (behaves correctly)."""

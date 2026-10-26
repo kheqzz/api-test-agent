@@ -98,7 +98,7 @@ td.mono, .id { font-family: ui-monospace, Consolas, monospace; font-size: 13px; 
 .field label { display: block; font-family: ui-monospace, Consolas, monospace;
   font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
   color: var(--muted); margin-bottom: 8px; }
-.field input[type=text], .field input[type=url] { width: 100%; padding: 12px 14px;
+.field input[type=text], .field input[type=url], .field input[type=password], .field input[type=email] { width: 100%; padding: 12px 14px;
   border: 1px solid var(--line); border-radius: 6px; background: var(--card);
   font-size: 15px; color: var(--ink); }
 .field input:focus { outline: none; border-color: var(--accent); }

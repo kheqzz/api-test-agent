@@ -3,7 +3,10 @@
     "allow": [
       "Shell(cd /run/media/keq/All_Downloads/project-ai-i-guess/api-test-agent && find .venv -path '*langchain_openai*' -name '*.pyi' 2>/dev/null; find .venv -path '*langchain_openai*' -name 'base.pyi' 2>/dev/null)",
       "Shell(which pyright basedpyright mypy 2>/dev/null; find / -name 'pyright' -type f 2>/dev/null | head)",
-      "Shell(mypy:*)"
+      "Shell(mypy:*)",
+      "Shell(sleep:*)",
+      "Shell(curl -s http://127.0.0.1:8000/reports/1d3ea16ff2eb)",
+      "Shell(python -c import sys,json; d=json.load(sys.stdin); print(d['status'], d.get('error')))"
     ],
     "deny": [],
     "defaultMode": "default"

@@ -28,7 +28,7 @@ Built with **LangGraph**, **FastAPI**, **httpx**, and **pytest**. Works with any
 
 - **Undocumented status codes** — the API returns codes the spec never mentions
 - **Schema mismatches** — response bodies that violate the declared response schemas
-- **5xx server errors** — including ones the spec doesn't document (ranked *critical*)
+- **5xx server errors** — including ones the spec doesn't document (ranked _critical_)
 - **Suspiciously slow endpoints** — latency above a configurable threshold
 - **Endpoint coverage** — how much of the spec was actually exercised
 
@@ -88,11 +88,11 @@ Authenticated APIs: either pass extra headers as JSON — `-F 'auth_headers={"Au
 
 The demo Bookshop API ([app/demo_api/main.py](app/demo_api/main.py)) ships with three intentional bugs the agent should flag:
 
-| Bug | Endpoint | Detected as |
-|---|---|---|
-| Unknown order id raises instead of 404 | `GET /orders/{order_id}` | `server_error` (critical, undocumented 500) |
-| `price` returned as string, `in_stock` missing | `GET /products/{product_id}` | `schema_mismatch` (high) |
-| Artificial 1.5 s delay | `GET /products` | `slow_response` |
+| Bug                                            | Endpoint                     | Detected as                                 |
+| ---------------------------------------------- | ---------------------------- | ------------------------------------------- |
+| Unknown order id raises instead of 404         | `GET /orders/{order_id}`     | `server_error` (critical, undocumented 500) |
+| `price` returned as string, `in_stock` missing | `GET /products/{product_id}` | `schema_mismatch` (high)                    |
+| Artificial 1.5 s delay                         | `GET /products`              | `slow_response`                             |
 
 ## Re-running the generated tests
 
@@ -106,15 +106,15 @@ TARGET_BASE_URL=https://staging.example.com pytest generated_tests/<report_id>
 
 ## API
 
-| Method | Path | Description |
-|---|---|---|
-| GET | `/` | Product landing page |
-| GET | `/dashboard` | Launch analyses from a form, browse past runs |
-| POST | `/analyze` | Start a run. Form fields: `target_url` (required), `spec_url` or `spec_file`, optional `auth_headers` (JSON object), or login flow fields `email`, `password`, `login_url`, `token_field`. Returns `202` + `report_id`. |
-| GET | `/reports` | List past runs |
-| GET | `/reports/{id}` | Report as JSON (report is `null` while running) |
-| GET | `/reports/{id}/html` | Readable HTML report |
-| GET | `/health` | Liveness probe |
+| Method | Path                 | Description                                                                                                                                                                                                             |
+| ------ | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/`                  | Product landing page                                                                                                                                                                                                    |
+| GET    | `/dashboard`         | Launch analyses from a form, browse past runs                                                                                                                                                                           |
+| POST   | `/analyze`           | Start a run. Form fields: `target_url` (required), `spec_url` or `spec_file`, optional `auth_headers` (JSON object), or login flow fields `email`, `password`, `login_url`, `token_field`. Returns `202` + `report_id`. |
+| GET    | `/reports`           | List past runs                                                                                                                                                                                                          |
+| GET    | `/reports/{id}`      | Report as JSON (report is `null` while running)                                                                                                                                                                         |
+| GET    | `/reports/{id}/html` | Readable HTML report                                                                                                                                                                                                    |
+| GET    | `/health`            | Liveness probe                                                                                                                                                                                                          |
 
 Reports are persisted in SQLite (`reports.db`).
 
@@ -122,20 +122,20 @@ Reports are persisted in SQLite (`reports.db`).
 
 All settings come from environment variables / `.env` (see [.env.example](.env.example)):
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `GROQ_API_KEY` | — | **Required.** Free at [console.groq.com](https://console.groq.com) |
-| `LLM_MODEL` | `llama-3.3-70b-versatile` | Model served by Groq |
-| `AGENT_BATCH_SIZE` | `4` | Endpoints per LLM call |
-| `AGENT_MAX_ENDPOINTS` | `30` | Cap on endpoints analyzed per run |
-| `AGENT_RATE_LIMIT_RPS` | `5` | Max requests/second against the target |
-| `AGENT_REQUEST_TIMEOUT` | `15` | HTTP timeout (s) for target calls |
-| `AGENT_SLOW_THRESHOLD_MS` | `1000` | Latency anomaly threshold |
-| `REPORTS_DB` | `reports.db` | SQLite path |
-| `GENERATED_TESTS_DIR` | `generated_tests` | Where pytest suites are written |
-| `MOUNT_DEMO` | `true` | Bundle the demo API in-process at `/demo` |
-| `AGENT_RESTRICT_TARGETS` | `false` | Lock `/analyze` to same-host / allowlisted targets (set `1` on public deploys) |
-| `AGENT_ALLOWED_TARGET_HOSTS` | — | Extra hosts allowed when `AGENT_RESTRICT_TARGETS=1` (comma-separated) |
+| Variable                     | Default                   | Purpose                                                                        |
+| ---------------------------- | ------------------------- | ------------------------------------------------------------------------------ |
+| `GROQ_API_KEY`               | —                         | **Required.** Free at [console.groq.com](https://console.groq.com)             |
+| `LLM_MODEL`                  | `llama-3.3-70b-versatile` | Model served by Groq                                                           |
+| `AGENT_BATCH_SIZE`           | `4`                       | Endpoints per LLM call                                                         |
+| `AGENT_MAX_ENDPOINTS`        | `30`                      | Cap on endpoints analyzed per run                                              |
+| `AGENT_RATE_LIMIT_RPS`       | `5`                       | Max requests/second against the target                                         |
+| `AGENT_REQUEST_TIMEOUT`      | `15`                      | HTTP timeout (s) for target calls                                              |
+| `AGENT_SLOW_THRESHOLD_MS`    | `1000`                    | Latency anomaly threshold                                                      |
+| `REPORTS_DB`                 | `reports.db`              | SQLite path                                                                    |
+| `GENERATED_TESTS_DIR`        | `generated_tests`         | Where pytest suites are written                                                |
+| `MOUNT_DEMO`                 | `true`                    | Bundle the demo API in-process at `/demo`                                      |
+| `AGENT_RESTRICT_TARGETS`     | `false`                   | Lock `/analyze` to same-host / allowlisted targets (set `1` on public deploys) |
+| `AGENT_ALLOWED_TARGET_HOSTS` | —                         | Extra hosts allowed when `AGENT_RESTRICT_TARGETS=1` (comma-separated)          |
 
 **Switching LLM providers:** everything goes through [app/llm.py](app/llm.py) — swap `ChatGroq` for any LangChain chat model (OpenAI, Anthropic, Ollama, …) and nothing else changes. Rate limits (429) are retried with exponential backoff; structured output falls back to raw-JSON parsing when tool-calling fails.
 
@@ -218,3 +218,11 @@ API is available in-process at `http://127.0.0.1:8000/demo`.
 ## License
 
 MIT
+
+## Credit
+
+https://github.com/1hicham11
+
+## Note
+
+dont use anything in branch V2,trust me

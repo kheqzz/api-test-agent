@@ -6,7 +6,10 @@
       "Shell(mypy:*)",
       "Shell(sleep:*)",
       "Shell(curl -s http://127.0.0.1:8000/reports/1d3ea16ff2eb)",
-      "Shell(python -c import sys,json; d=json.load(sys.stdin); print(d['status'], d.get('error')))"
+      "Shell(python -c import sys,json; d=json.load(sys.stdin); print(d['status'], d.get('error')))",
+      "Shell(curl -s -w \"\\nHTTP %{http_code}\\n\" -X POST http://127.0.0.1:8000/analyze \\ -F \"spec_url=http://127.0.0.1:8000/demo/openapi.json\" \\ -F \"target_url=http://127.0.0.1:8000/demo\" \\ -F \"email=user@example.com\" \\ -F \"password=secret\" \\ -F \"login_url=http://127.0.0.1:8000/demo/auth/login\" \\ -F \"token_field=jwt_token\")",
+      "Shell(curl -s -w \"\\nHTTP %{http_code}\\n\" -X POST http://127.0.0.1:8000/analyze \\ -F \"spec_url=http://127.0.0.1:8000/demo/openapi.json\" \\ -F \"target_url=http://127.0.0.1:8000/demo\" \\ -F \"email=user@example.com\" \\ -F \"password=secret\" \\ -F \"login_url=http://127.0.0.1:8000/demo/nope\")",
+      "Shell(kill:*)"
     ],
     "deny": [],
     "defaultMode": "default"

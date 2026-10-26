@@ -110,7 +110,7 @@ TARGET_BASE_URL=https://staging.example.com pytest generated_tests/<report_id>
 |---|---|---|
 | GET | `/` | Product landing page |
 | GET | `/dashboard` | Launch analyses from a form, browse past runs |
-| POST | `/analyze` | Start a run. Form fields: `target_url` (required), `spec_url` or `spec_file`, optional `auth_headers` (JSON object). Returns `202` + `report_id`. |
+| POST | `/analyze` | Start a run. Form fields: `target_url` (required), `spec_url` or `spec_file`, optional `auth_headers` (JSON object), or login flow fields `email`, `password`, `login_url`, `token_field`. Returns `202` + `report_id`. |
 | GET | `/reports` | List past runs |
 | GET | `/reports/{id}` | Report as JSON (report is `null` while running) |
 | GET | `/reports/{id}/html` | Readable HTML report |

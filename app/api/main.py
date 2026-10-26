@@ -120,42 +120,44 @@ def _extract_token(payload: Any, field: str) -> str | None:
 
 
 def _call_token_endpoint(
+    client: httpx.Client,
     request: Request,
     token_url: str,
-    login_token: str,
+    login_token: str | None,
     field: str,
 ) -> str:
-    """Call a JWT/token endpoint using the login token and return the JWT."""
+    """Call a JWT/token endpoint using the (cookie-bearing) client and return the JWT."""
     _ensure_target_allowed(request, token_url, "token_url")
     field = (field or "").strip() or "access_token"
-    strategies: list[tuple[str, dict[str, str], dict[str, str] | None]] = [
-        ("POST", {"Authorization": f"Bearer {login_token}"}, None),
-        ("POST", {"Authorization": f"Bearer {login_token}"}, {"token": login_token}),
-        ("POST", {"Authorization": f"Bearer {login_token}"}, {"access_token": login_token}),
-        ("POST", {}, {"token": login_token}),
-        ("POST", {}, {"access_token": login_token}),
-        ("POST", {}, {"jwt": login_token}),
-        ("GET", {"Authorization": f"Bearer {login_token}"}, None),
-        ("GET", {}, None),
-    ]
+    # Build a list of (method, headers, body). Cookies are carried by `client`.
+    attempts: list[tuple[str, dict[str, str], dict[str, str] | None]] = []
+    # Cookie/session based (most common for better-auth): just GET/POST with cookies.
+    attempts.append(("GET", {}, None))
+    attempts.append(("POST", {}, None))
+    if login_token:
+        attempts.append(("GET", {"Authorization": f"Bearer {login_token}"}, None))
+        attempts.append(("POST", {"Authorization": f"Bearer {login_token}"}, None))
+        attempts.append(("POST", {"Authorization": f"Bearer {login_token}"}, {"token": login_token}))
+        attempts.append(("POST", {"Authorization": f"Bearer {login_token}"}, {"access_token": login_token}))
+        attempts.append(("POST", {}, {"token": login_token}))
+        attempts.append(("POST", {}, {"access_token": login_token}))
+        attempts.append(("POST", {}, {"jwt": login_token}))
     last_error: str | None = None
-    for method, headers, body in strategies:
+    for method, headers, body in attempts:
         try:
-            with httpx.Client(timeout=settings.request_timeout, follow_redirects=True) as client:
-                if method == "POST":
-                    if body is None:
-                        response = client.post(token_url, headers=headers)
-                    else:
-                        response = client.post(token_url, headers=headers, json=body)
+            if method == "POST":
+                if body is None:
+                    response = client.post(token_url, headers=headers)
                 else:
-                    response = client.get(token_url, headers=headers)
+                    response = client.post(token_url, headers=headers, json=body)
+            else:
+                response = client.get(token_url, headers=headers)
         except httpx.HTTPError as exc:
             last_error = f"request failed: {exc}"
             continue
         if response.status_code >= 400:
             last_error = f"HTTP {response.status_code}: {response.text[:200]}"
             continue
-        # Try JSON first.
         try:
             payload = response.json()
         except (json.JSONDecodeError, ValueError):
@@ -168,12 +170,9 @@ def _call_token_endpoint(
         token = _extract_token(payload, field)
         if token:
             return token
-        # Some endpoints return the token under a non-standard key; try the whole
-        # payload serialized? Fall back to scanning string values.
         if isinstance(payload, dict):
             for value in payload.values():
                 if isinstance(value, str) and value.strip() and value != login_token:
-                    # heuristic: a JWT-like or longer token
                     if len(value.strip()) >= 8:
                         return value.strip()
         last_error = f"no token found in response: {str(payload)[:200]}"
@@ -203,40 +202,38 @@ def _login_for_token(
     if not login_url:
         return {}
     _ensure_target_allowed(request, login_url, "login_url")
-    try:
-        with httpx.Client(timeout=settings.request_timeout, follow_redirects=True) as client:
+    with httpx.Client(timeout=settings.request_timeout, follow_redirects=True) as client:
+        try:
             response = client.post(
                 login_url, json={email_field: email, password_field: password}
             )
-    except httpx.HTTPError as exc:
-        raise HTTPException(502, f"login request failed: {exc}") from exc
-    if response.status_code >= 400:
-        raise HTTPException(
-            401 if response.status_code in (401, 403) else 422,
-            f"login failed ({response.status_code}): {response.text[:300]}",
-        )
-    try:
-        payload = response.json()
-    except (json.JSONDecodeError, ValueError) as exc:
-        raise HTTPException(502, f"login response is not JSON: {exc}") from exc
-    intermediate_field = (login_token_field or "").strip() or "token"
-    login_token = _extract_token(payload, intermediate_field)
-    if not login_token:
-        # Fall back to the configured token_field for single-step setups.
-        login_token = _extract_token(payload, token_field)
-    if not login_token:
-        raise HTTPException(
-            502,
-            f"no token found under field {intermediate_field!r} in login response: "
-            f"{str(payload)[:300]}",
-        )
+        except httpx.HTTPError as exc:
+            raise HTTPException(502, f"login request failed: {exc}") from exc
+        if response.status_code >= 400:
+            raise HTTPException(
+                401 if response.status_code in (401, 403) else 422,
+                f"login failed ({response.status_code}): {response.text[:300]}",
+            )
+        try:
+            payload = response.json()
+        except (json.JSONDecodeError, ValueError):
+            payload = {}
+        intermediate_field = (login_token_field or "").strip() or "token"
+        login_token = _extract_token(payload, intermediate_field)
+        if not login_token:
+            login_token = _extract_token(payload, token_field)
+        # Allow missing body token when session is cookie-based.
 
-    # If a separate token/JWT endpoint is configured, exchange the login token for a JWT.
-    if token_url:
-        final_field = (jwt_token_field or "").strip() or (token_field or "").strip() or "access_token"
-        jwt = _call_token_endpoint(request, token_url, login_token, final_field)
-        return {"Authorization": f"Bearer {jwt}"}
-    return {"Authorization": f"Bearer {login_token}"}
+        # If a separate token/JWT endpoint is configured, exchange for a JWT.
+        if token_url:
+            final_field = (jwt_token_field or "").strip() or (token_field or "").strip() or "access_token"
+            jwt = _call_token_endpoint(client, request, token_url, login_token, final_field)
+            return {"Authorization": f"Bearer {jwt}"}
+        # Single-step: if a body token exists use it; otherwise there's nothing to
+        # use as a Bearer token (cookie-only sessions aren't usable as headers).
+        if login_token:
+            return {"Authorization": f"Bearer {login_token}"}
+        return {}
 
 
 def _run_analysis(state: AgentState) -> None:

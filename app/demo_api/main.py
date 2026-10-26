@@ -193,6 +193,24 @@ async def issue_token_get(request: Request) -> dict[str, str]:
     }
 
 
+# Cookie-based (better-auth style) demo endpoints.
+@app.post("/auth/ba/sign-in/email")
+async def ba_sign_in(request: Request, payload: dict) -> dict[str, Any]:
+    if not payload.get("email") or not payload.get("password"):
+        raise HTTPException(401, "missing credentials")
+    response = JSONResponse({"token": None, "user": {"email": payload.get("email")}})
+    response.set_cookie("better-auth.session_token", "demo-session-token", httponly=True, path="/")
+    return response
+
+
+@app.get("/auth/ba/token")
+async def ba_token(request: Request) -> dict[str, str]:
+    session = request.cookies.get("better-auth.session_token")
+    if not session:
+        raise HTTPException(401, "missing session cookie")
+    return {"token": "demo-jwt-token", "access_token": "demo-jwt-token"}
+
+
 @app.get("/health")
 async def health() -> dict[str, str]:
     """Liveness probe (behaves correctly)."""
